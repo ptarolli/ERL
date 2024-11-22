@@ -1,0 +1,101 @@
+Coastal agriculture Google Earth Engine open-source code 
+(developed by authors for determining the spatial distribution of global coastal agricultural landscapes)
+
+Global impact of seawater intrusion on coastal agriculture
+Aurora Ghirardelli, Eugenio Straffelini, Edward Park, Vincenzo D’Agostino, Roberta Masin, and Paolo Tarolli (2024)
+
+////////// ////////// ////////// ////////// //////////
+// STEP 1.  LAND COVER: EXTRACT CROPLAND LOCATIONS //
+/////////// ////////// ////////// ////////// //////////
+
+// a. import 2019 CGLS-LC100 land cover with 100m resolution
+
+var CGLS_LC100_19 = ee.Image("COPERNICUS/Landcover/100m/Proba-V-C3/Global/2019");
+var lc2019 = CGLS_LC100_19.select("discrete_classification");
+
+Map.addLayer(lc2019, {}, 'discrete_classification');
+
+// b. select "cropland" class only
+
+var cropland_global = lc2019.eq(40).updateMask(lc2019.neq(0));
+
+Map.addLayer(cropland_global, '', 'cropland_global')
+
+// c. add buffer
+
+Map.addLayer(table, '', 'Buffer_coastline')
+
+// d. Clip cropland to buffer
+
+var Clip_cropland = cropland_global.clip(table) // Import the shapefile representing a 100-km buffer of the global coastline as an asset (table).You can access the shapefile in the current shapefile repository
+
+Map.addLayer(Clip_cropland, '', 'Buffer_cropland')
+
+////////// ////////// ////////// ////////// //////////
+// STEP 2.  SLOPE: EXTRACT DTM //
+/////////// ////////// ////////// ////////// //////////
+
+// a. Select DEM Copernicus and clip mean DEM image to buffer
+
+var dataset = ee.ImageCollection('COPERNICUS/DEM/GLO30');
+var dataset_clipped = dataset.mean().clip(table)
+var elevation = dataset_clipped.select('DEM');
+var elevationVis = {
+  min: 0.0,
+  max: 1000.0,
+  palette: ['0000ff','00ffff','ffff00','ff0000','ffffff'],
+};
+
+Map.addLayer(elevation, elevationVis, 'elevation_coastline');
+
+// b. Select DEM image lower than 10 m
+
+var maxElevation = 10;
+var elevationMask = elevation.lt(maxElevation);
+
+var elevation_coastline_lt10 = elevation.mask(elevationMask)
+
+Map.addLayer(elevation_coastline_lt10, elevationVis,'elevation_coastline_lt10');
+
+// c. Transform mask into 1 - nodata values
+
+var NoData = 0;
+
+var elevation_lt10_mask = elevation_coastline_lt10.lt(10).updateMask(elevation_coastline_lt10.neq(NoData));
+
+Map.addLayer(elevation_lt10_mask, '', 'elevation_lt10_mask');
+
+////////// ////////// ////////// ////////// //////////
+// STEP 3.  MULTIPLY RASTERS: EXTRACT CROPLAND IN COASTLINE //
+/////////// ////////// ////////// ////////// //////////
+
+// a. Multiply Clipped coastal cropland and Clipped coastal DEM rasters
+
+var Coastal_cropland_1_0 = elevation_lt10_mask.multiply(Clip_cropland);
+
+// b. Transform mask into 1 - nodata values
+
+var Coastal_cropland = Coastal_cropland_1_0.eq(1).updateMask(Coastal_cropland_1_0.neq(NoData));
+
+Map.addLayer(Coastal_cropland,'', 'Coastal_cropland');   
+
+////////// ////////// ////////// ////////// //////////
+// STEP 4.  EXPORT COASTAL CROPLAND //
+/////////// ////////// ////////// ////////// //////////
+
+//// a. define global coverage for export 
+
+var geometry = ee.Geometry.Rectangle([-179,-58,179,78], null, false);
+
+// b. export raster to Google Drive folder (files are automatically split into tiles)
+
+Export.image.toDrive({  
+image: Coastal_cropland,  
+description: 'Coastal_cropland',  
+scale: 100,  
+region: geometry,  
+maxPixels: 1e11});
+
+
+20 November 2024 paolo.tarolli@unipd.it
+
